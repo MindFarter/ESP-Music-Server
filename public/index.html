@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP Music Server</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="#library" id="brand"><img id="logo" alt="" hidden><span id="brandTitle">ESP Music Server</span></a>
+    <nav aria-label="Main">
+      <a href="#library" data-v="library">Library</a>
+      <a href="#playlists" data-v="playlists">Playlists</a>
+      <a href="#player" data-v="player">Player</a>
+      <a href="#radio" data-v="radio">Radio</a>
+      <a href="#boards" data-v="boards">Boards</a>
+      <a href="#plugins" data-v="plugins">Plugins</a>
+      <a href="#settings" data-v="settings">Settings</a>
+    </nav>
+    <span class="version">V0.0.2</span>
+  </aside>
+
+  <main id="view" tabindex="-1"></main>
+
+  <footer class="player" aria-label="Player">
+    <label class="field"><span class="small muted">Play on</span><select id="boardSel"></select></label>
+    <div class="lcd" aria-live="polite"><b id="nowTitle">Nothing playing</b><span id="nowSub">Choose a track and a board</span></div>
+    <div class="row">
+      <div class="transport">
+        <button class="btn icon" id="prev" data-player-action="prev" title="Previous track" aria-label="Previous track">&#9198;</button>
+        <button class="btn icon" id="playPause" data-player-action="toggle" title="Play or pause" aria-label="Play or pause">&#9654;</button>
+        <button class="btn icon" id="stop" data-player-action="stop" title="Stop" aria-label="Stop">&#9209;</button>
+        <button class="btn icon" id="next" data-player-action="next" title="Next track" aria-label="Next track">&#9197;</button>
+      </div>
+      <label class="vol"><span class="small muted">Volume</span><input id="vol" type="range" min="0" max="100" value="60" aria-label="Volume"></label>
+    </div>
+    <div class="seekRow"><span class="small muted" data-current-time>0:00</span><input data-seek type="range" min="0" max="1000" value="0" aria-label="Playback position"><span class="small muted" data-duration>0:00</span></div>
+  </footer>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<audio id="audio" preload="none"></audio>
+<script src="/app.js"></script>
+</body>
+</html>

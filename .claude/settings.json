@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": ["Bash(npm test)", "Bash(npm start)", "Bash(node --check:*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "f=$(jq -r '.tool_input.file_path'); case \"$f\" in */data/*|*package-lock.json) echo \"Blocked: $f is runtime data or a lockfile\" >&2; exit 2;; esac" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "f=$(jq -r '.tool_input.file_path'); case \"$f\" in *.js) node --check \"$f\" || exit 2;; esac" }]
+      }
+    ]
+  }
+}

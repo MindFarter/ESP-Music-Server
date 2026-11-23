@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music</title>
+<!-- The same stylesheet and layout as the music server's own page, so the two read as one. -->
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="style.css">
+<style>
+/* No "Play on" picker and no seek bar here: this page controls the board it is served from, and a stream cannot be sought. */
+@media (min-width: 821px) { .player { grid-template-columns: minmax(0, 1fr) auto; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="#library" id="brand"><img id="logo" alt="" hidden><span id="brandTitle">Music</span></a>
+    <nav aria-label="Main">
+      <a href="#library" data-v="library">Library</a>
+      <a href="#radio" data-v="radio">Radio</a>
+    </nav>
+    <span class="version" id="state"></span>
+  </aside>
+
+  <main id="view" tabindex="-1"></main>
+
+  <footer class="player" aria-label="Player">
+    <div class="lcd" aria-live="polite"><b id="nowTitle">Connecting</b><span id="nowSub"></span></div>
+    <div class="row">
+      <div class="transport">
+        <button class="btn icon" id="prev" title="Previous track" aria-label="Previous track">&#9198;</button>
+        <button class="btn icon" id="stop" title="Stop" aria-label="Stop">&#9209;</button>
+        <button class="btn icon" id="next" title="Next track" aria-label="Next track">&#9197;</button>
+      </div>
+      <label class="vol"><span class="small muted">Volume</span><input id="vol" type="range" min="0" max="100" value="60" aria-label="Volume"></label>
+    </div>
+  </footer>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="config.js"></script>
+<script>
+(() => {
+  const C = window.LWMS, $ = s => document.querySelector(s);
+  const h = (tag, attrs, ...kids) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else if (k === 'class') el.className = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(kid));
+    return el;
+  };
+  let toastTimer;
+  const toast = (msg, err) => { const t = $('#toast'); t.textContent = msg; t.className = 'show' + (err ? ' err' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = ''; }, err ? 5000 : 2200); };
+  const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
+
+  // Text colour that reads on the accent colour.
+  const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  if (/^#[0-9a-f]{6}$/i.test(acc)) {
+    const n = parseInt(acc.slice(1), 16), l = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    document.documentElement.style.setProperty('--accent-ink', l > 0.6 ? '#000' : '#fff');
+  }
+  document.title = C.title; $('#brandTitle').textContent = C.title;
+  if (C.logo) { $('#logo').src = C.logo; $('#logo').hidden = false; $('#brand').classList.add('hasLogo'); }
+
+  // ---------- talking to the board (same address as this page) and to the music server ----------
+  const server = path => fetch(C.server + path).then(r => { if (!r.ok) throw new Error('The music server answered ' + r.status); return r.json(); });
+  const toBoard = fields => fetch(C.setPath, { method: 'POST', body: new URLSearchParams(fields) })
+    .then(r => { if (!r.ok) throw new Error('The board answered ' + r.status); });
+  const setNow = (title, sub) => { $('#nowTitle').textContent = title; $('#nowSub').textContent = sub || ''; };
+
+  // ---------- the queue ----------
+  // Only this page's own queue. If the music server is running a queue for this board, it moves on by itself.
+  let queue = [], qi = -1, seen = false, idle = false, pushedAt = 0;
+  async function playIndex(i) {
+    if (i < 0 || i >= queue.length) { qi = -1; queue = []; return toBoard({ [C.urlField]: '' }); }
+    qi = i; seen = false; idle = false; pushedAt = Date.now();
+    const t = queue[i];
+    setNow(t.artist + ' - ' + t.title, 'Track ' + (i + 1) + ' of ' + queue.length);
+    await toBoard({ [C.urlField]: C.server + '/stream/' + t.id + '.mp3?p=' + C.profile });
+  }
+  async function playStation(r) { queue = []; qi = -1; setNow(r.name, 'Radio'); await toBoard({ [C.urlField]: r.url }); }
+  const serverMoves = () => server('/api/managed').then(d => d.hosts.some(x => x.split(':')[0] === location.hostname)).catch(() => false);
+
+  $('#prev').onclick = guard(() => qi > 0 ? playIndex(qi - 1) : Promise.resolve());
+  $('#next').onclick = guard(() => qi >= 0 ? playIndex(qi + 1) : Promise.resolve());
+  $('#stop').onclick = guard(async () => { queue = []; qi = -1; await toBoard({ [C.urlField]: '' }); setNow('Stopped', ''); });
+  let vt;
+  $('#vol').oninput = e => { clearTimeout(vt); vt = setTimeout(() => toBoard({ [C.volumeField]: e.target.value }).catch(() => {}), 250); };
+
+  // Read the board's own values every 3 seconds and move the queue on when a track has ended.
+  const truthy = v => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
+  async function tick() {
+    try {
+      const d = await fetch(C.dataPath).then(r => r.json());
+      $('#state').textContent = 'Board online';
+      if (d[C.nowField]) setNow(d[C.nowField], qi >= 0 ? 'Track ' + (qi + 1) + ' of ' + queue.length : 'On the board');
+      const v = Number(d[C.volumeField]);
+      if (Number.isFinite(v) && document.activeElement !== $('#vol')) $('#vol').value = v;
+      if (truthy(d[C.playingField])) { seen = true; idle = false; }
+      else if (seen && qi >= 0) {
+        seen = false;
+        // Stopped before the track could have ended: someone stopped it by hand, so do not skip on.
+        if (Date.now() - pushedAt < ((queue[qi].duration || 0) - 5) * 1000) idle = true;
+        else if (!(await serverMoves())) await playIndex(qi + 1);
+      }
+    } catch { $('#state').textContent = 'Board not answering'; }
+  }
+
+  // ---------- views ----------
+  const view = () => $('#view');
+  const row = (title, sub, label, fn, cover) => h('li', { class: cover ? '' : 'nocover' },
+    cover && h('img', { class: 'cover', src: C.server + '/art/' + cover, alt: '', loading: 'lazy', onerror: e => { e.target.style.visibility = 'hidden'; } }),
+    h('div', { class: 't' }, h('button', { class: 'go', onclick: guard(fn) }, h('b', {}, title), sub && h('span', {}, sub))),
+    label && h('button', { class: 'btn', onclick: guard(fn) }, label));
+  const empty = text => h('div', { class: 'empty' }, text);
+  const play = (items, i) => { queue = items; return playIndex(i); };
+
+  const lib = { tab: 'artists', artist: '', album: null, q: '' };
+  const trackRows = items => h('ul', { class: 'list' }, items.map((t, i) => row(t.title, t.artist + ' · ' + t.album, 'Play', () => play(items, i))));
+
+  async function viewLibrary() {
+    const search = h('input', { type: 'search', class: 'search', placeholder: 'Search the library', 'aria-label': 'Search', value: lib.q,
+      onkeydown: e => { if (e.key === 'Enter') { lib.q = e.target.value.trim(); lib.album = null; viewLibrary(); } } });
+    const tab = (id, label) => h('button', { role: 'tab', 'aria-selected': String(!lib.q && !lib.album && lib.tab === id), onclick: () => { Object.assign(lib, { tab: id, q: '', album: null, artist: id === 'albums' ? lib.artist : '' }); viewLibrary(); } }, label);
+    const body = h('div', {});
+    const title = lib.album ? lib.album.album : lib.q ? 'Search' : lib.artist ? lib.artist : 'Library';
+    view().replaceChildren(h('div', { class: 'head' }, h('h1', {}, title), search),
+      h('div', { class: 'tabs', role: 'tablist' }, tab('artists', 'Artists'), tab('albums', 'Albums'), tab('tracks', 'Tracks')), body);
+    try {
+      if (lib.album) {
+        const r = await server('/api/browse/tracks?limit=200&album=' + encodeURIComponent(lib.album.id));
+        body.replaceChildren(h('div', { class: 'row', style: 'margin-bottom:12px' }, h('button', { class: 'btn primary', onclick: guard(() => play(r.items, 0)) }, 'Play album'), h('span', { class: 'muted' }, lib.album.artist)), trackRows(r.items));
+      } else if (lib.q) {
+        const r = await server('/api/browse/tracks?limit=100&q=' + encodeURIComponent(lib.q));
+        body.replaceChildren(r.items.length ? trackRows(r.items) : empty('Nothing found.'));
+      } else if (lib.tab === 'artists') {
+        const a = await server('/api/browse/artists');
+        body.replaceChildren(a.length ? h('ul', { class: 'list' }, a.map(x => row(x.name, x.albums + ' albums, ' + x.tracks + ' tracks', null, () => { Object.assign(lib, { tab: 'albums', artist: x.name }); viewLibrary(); }))) : empty('The library is empty: scan a music folder on the music server.'));
+      } else if (lib.tab === 'albums') {
+        const a = await server('/api/browse/albums' + (lib.artist ? '?artist=' + encodeURIComponent(lib.artist) : ''));
+        body.replaceChildren(a.length ? h('ul', { class: 'list' }, a.map(x => row(x.album, x.artist + (x.year ? ' · ' + x.year : ''), null, () => { lib.album = x; viewLibrary(); }, x.firstTrack))) : empty('No albums.'));
+      } else {
+        const r = await server('/api/browse/tracks?limit=200');
+        body.replaceChildren(trackRows(r.items), r.total > r.items.length && h('p', { class: 'muted small' }, 'Showing ' + r.items.length + ' of ' + r.total + ' tracks. Use search to find the rest.'));
+      }
+    } catch (e) { body.replaceChildren(empty(e.message + ' (' + C.server + ')')); }
+  }
+
+  async function viewRadio() {
+    const body = h('div', {});
+    view().replaceChildren(h('div', { class: 'head' }, h('h1', {}, 'Radio')), body);
+    try {
+      const r = await server('/api/radios');
+      body.replaceChildren(r.length ? h('ul', { class: 'list' }, r.map(x => row(x.name, '', 'Play', () => playStation(x)))) : empty('No stations yet: add some on the music server’s Radio page.'));
+    } catch (e) { body.replaceChildren(empty(e.message)); }
+  }
+
+  const VIEWS = { library: viewLibrary, radio: viewRadio };
+  function route() {
+    const name = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'library';
+    for (const a of document.querySelectorAll('nav a')) a.dataset.v === name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
+    VIEWS[name]();
+  }
+  addEventListener('hashchange', route);
+  setInterval(tick, 3000); tick(); route();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "esp-music-server",
+  "version": "0.0.2",
+  "description": "A local music server for ESP32 boards running LCD Wizard: MP3 streams, radio stations, a themeable web UI and a board pack.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node --test test/smoke.js" },
+  "engines": { "node": ">=20" },
+  "keywords": ["lcd-wizard", "esp32", "esp32-s3", "esp32-c6", "music-server", "mp3", "internet-radio", "m3u"],
+  "author": "MindFarter (https://github.com/MindFarter)",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/MindFarter/esp-music-server.git" },
+  "bugs": { "url": "https://github.com/MindFarter/esp-music-server/issues" },
+  "homepage": "https://github.com/MindFarter/esp-music-server#readme",
+  "dependencies": { "music-metadata": "^11.0.0" }
+}

@@ -1,0 +1,9 @@
+node_modules/
+data/
+*.log
+.DS_Store
+.env
+# Your own provider adapters stay on your machine.
+plugins/*
+!plugins/.gitkeep
+.claude/settings.local.json

@@ -1,4 +1,4 @@
-# ESP Music Server — V0.0.2
+# ESP Music Server — V0.0.2     https://deepwiki.com/badge-maker?url=https%3A%2F%2Fdeepwiki.com%2FMindFarter%2FESP-Music-Server
 
 A local music server and web player for ESP32 boards running 
 [LCD Wizard](https://lcdwizard.com/). It scans your music folders, streams
